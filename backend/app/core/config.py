@@ -44,6 +44,11 @@ class Settings(BaseSettings):
     BACKEND_CORS_ORIGINS: Annotated[list[AnyUrl] | str, BeforeValidator(parse_cors)] = (
         []
     )
+
+    LEMON_SQUEEZY_API_KEY: str = ""
+    LEMON_SQUEEZY_STORE_ID: str = ""
+    LEMON_SQUEEZY_WEBHOOK_SECRET: str = ""
+
     # Secret key for automation engine
     SECRET_KEY_ENGINE: str = ""
 
@@ -118,12 +123,7 @@ class Settings(BaseSettings):
             path=self.POSTGRES_DB,
         )
 
-    SMTP_TLS: bool = True
-    SMTP_SSL: bool = False
-    SMTP_PORT: int = 587
-    SMTP_HOST: str | None = None
-    SMTP_USER: str | None = None
-    SMTP_PASSWORD: str | None = None
+    EMAILS_RESEND_API_KEY: str | None = None
     EMAILS_FROM_EMAIL: EmailStr | None = None
     EMAILS_FROM_NAME: str | None = None
 
@@ -131,6 +131,8 @@ class Settings(BaseSettings):
     def _set_default_emails_from(self) -> Self:
         if not self.EMAILS_FROM_NAME:
             self.EMAILS_FROM_NAME = self.PROJECT_NAME
+        if not self.EMAILS_FROM_EMAIL and self.RESEND_FROM_EMAIL:
+            self.EMAILS_FROM_EMAIL = self.RESEND_FROM_EMAIL
         return self
 
     EMAIL_RESET_TOKEN_EXPIRE_HOURS: int = 48
@@ -138,9 +140,8 @@ class Settings(BaseSettings):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def emails_enabled(self) -> bool:
-        logger.info(f"SMTP_HOST: {self.SMTP_HOST}")
-        logger.info(f"EMAILS_FROM_EMAIL: {self.EMAILS_FROM_EMAIL}")
-        return bool(self.SMTP_HOST and self.EMAILS_FROM_EMAIL)
+        logger.info(f"RESEND_FROM_EMAIL: {self.RESEND_FROM_EMAIL}")
+        return bool(self.EMAILS_RESEND_API_KEY and self.RESEND_FROM_EMAIL)
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -152,9 +153,9 @@ class Settings(BaseSettings):
             and self.DO_SPACES_REGION
         )
 
-    EMAIL_TEST_USER: EmailStr = "test@example.com"
-    FIRST_SUPERUSER: EmailStr
-    FIRST_SUPERUSER_PASSWORD: str
+    SUPERUSER_EMAIL: EmailStr
+    SUPERUSER_PHONE: str
+    SUPERUSER_PASSWORD: str
 
     # Firebase configuration for Phone OTP
     FIREBASE_SERVICE_ACCOUNT_FILE: str = "firebase-service-account.json"
@@ -174,9 +175,7 @@ class Settings(BaseSettings):
     def _enforce_non_default_secrets(self) -> Self:
         self._check_default_secret("SECRET_KEY", self.SECRET_KEY)
         self._check_default_secret("POSTGRES_PASSWORD", self.POSTGRES_PASSWORD)
-        self._check_default_secret(
-            "FIRST_SUPERUSER_PASSWORD", self.FIRST_SUPERUSER_PASSWORD
-        )
+        self._check_default_secret("SUPERUSER_PASSWORD", self.SUPERUSER_PASSWORD)
 
         return self
 

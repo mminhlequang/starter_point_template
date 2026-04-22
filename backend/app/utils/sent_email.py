@@ -2,33 +2,19 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Optional, List
+from typing import Any
 
-import emails  # type: ignore
+import httpx
 import jwt
 from jinja2 import Template
 from jwt.exceptions import InvalidTokenError
 
 from app.core import security
 from app.core.config import settings
-import uuid
-from typing import Any
 
-from sqlmodel import Session, select
-
-from app.core.security import get_password_hash, verify_password
-from app.models import User
-from app.schemas.user import UserCreate, UserUpdate
-
-import os
-import shutil
-from fastapi import UploadFile, HTTPException
-
-
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
- 
+
 @dataclass
 class EmailData:
     html_content: str
@@ -50,22 +36,29 @@ def send_email(
     html_content: str = "",
 ) -> None:
     assert settings.emails_enabled, "no provided configuration for email variables"
-    message = emails.Message(
-        subject=subject,
-        html=html_content,
-        mail_from=(settings.EMAILS_FROM_NAME, settings.EMAILS_FROM_EMAIL),
+
+    from_email = str(settings.RESEND_FROM_EMAIL)
+    from_name = settings.EMAILS_FROM_NAME or settings.PROJECT_NAME
+
+    payload = {
+        "from": f"{from_name} <{from_email}>",
+        "to": [email_to],
+        "subject": subject,
+        "html": html_content,
+    }
+    headers = {
+        "Authorization": f"Bearer {settings.EMAILS_RESEND_API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+    response = httpx.post(
+        "https://api.resend.com/emails",
+        json=payload,
+        headers=headers,
+        timeout=20.0,
     )
-    smtp_options = {"host": settings.SMTP_HOST, "port": settings.SMTP_PORT}
-    if settings.SMTP_TLS:
-        smtp_options["tls"] = True
-    elif settings.SMTP_SSL:
-        smtp_options["ssl"] = True
-    if settings.SMTP_USER:
-        smtp_options["user"] = settings.SMTP_USER
-    if settings.SMTP_PASSWORD:
-        smtp_options["password"] = settings.SMTP_PASSWORD
-    response = message.send(to=email_to, smtp=smtp_options)
-    logger.info(f"send email result: {response}")
+    response.raise_for_status()
+    logger.info("send email result: %s", response.json())
 
 
 def generate_test_email(email_to: str) -> EmailData:
@@ -153,7 +146,6 @@ def generate_otp_email(
     """
     project_name = settings.PROJECT_NAME
 
-    # OTP configuration based on purpose
     otp_config = {
         "password_reset": {
             "icon": "🔐",
@@ -217,10 +209,8 @@ def generate_otp_email(
         },
     }
 
-    # Get config for this purpose, default to password_reset
     config = otp_config.get(purpose, otp_config["password_reset"])
 
-    # Build context
     context = {
         "project_name": project_name,
         "icon": config["icon"],

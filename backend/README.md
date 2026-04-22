@@ -31,16 +31,16 @@ cd fastapi_template
 
 File `.env` đã có sẵn dạng template placeholder. Bạn cần thay các giá trị sau:
 
-- `shopviaads`
-- `api.techads.store`
-- `techads.store`
-- `8000`
-- `8080`
-- `5432`
+- `{{project_name}}`
+- `{{domain}}`
+- `{{frontend domain}}`
+- `{{port fastapi}}`
+- `{{port adminer}}`
+- `{{port postgres}}`
 
 Lưu ý:
 
-- Nếu dùng SMTP thật, điền đúng `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`
+- Nếu dùng gửi mail, điền `EMAILS_RESEND_API_KEY` và `RESEND_FROM_EMAIL`
 - Nếu chưa dùng Lemon Squeezy, có thể giữ trống các biến liên quan để chạy local API cơ bản
 
 ## 4) Start dự án bằng Docker Compose
@@ -71,15 +71,15 @@ docker compose down
 
 ## 5) Dự án chạy ở đâu
 
-- API: `http://localhost:8000`
-- Swagger UI: `http://localhost:8000/docs`
-- ReDoc: `http://localhost:8000/redoc`
-- Adminer: `http://localhost:8080`
+- API: `http://localhost:{{port fastapi}}`
+- Swagger UI: `http://localhost:{{port fastapi}}/docs`
+- ReDoc: `http://localhost:{{port fastapi}}/redoc`
+- Adminer: `http://localhost:{{port adminer}}`
 
 Health check:
 
 ```bash
-curl http://localhost:8000/api/v1/utils/health-check/
+curl http://localhost:{{port fastapi}}/api/v1/utils/health-check/
 ```
 
 ## 6) Những gì container tự làm khi khởi động
@@ -143,7 +143,7 @@ docker compose exec backend alembic upgrade head
 
 ### Không đăng nhập được tài khoản admin ban đầu
 
-- Kiểm tra `FIRST_SUPERUSER` và `FIRST_SUPERUSER_PASSWORD` trong `.env`
+- Kiểm tra `SUPERUSER` và `SUPERUSER_PASSWORD` trong `.env`
 - Xem log service `prestart` để xác nhận bước seed dữ liệu
 
 ## 9) Deploy VPS (tham khảo nhanh)

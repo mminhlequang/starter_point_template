@@ -4,7 +4,13 @@ from datetime import datetime, date
 from typing import Optional
 from pydantic import EmailStr
 from sqlmodel import Field, Relationship, SQLModel
-from sqlalchemy import Column, JSON, UniqueConstraint as sa_UniqueConstraint, ForeignKey, Index
+from sqlalchemy import (
+    Column,
+    JSON,
+    UniqueConstraint as sa_UniqueConstraint,
+    ForeignKey,
+    Index,
+)
 
 
 # Database model, database table inferred from class name
@@ -17,6 +23,7 @@ class User(SQLModel, table=True):
     company_name: str | None = Field(default=None, max_length=255)
     website_url: str | None = None
     avatar_url: str | None = None
+    lemon_customer_id: str | None = Field(default=None, max_length=255)
     is_superuser: bool = False
     ref_code: str | None = Field(default=None, max_length=32, unique=True, index=True)
     request_delete_at: datetime | None = None
@@ -24,11 +31,17 @@ class User(SQLModel, table=True):
     trial_expired_at: datetime | None = None
     email_verified: bool | None = None
     last_login_provider: str | None = Field(default=None, max_length=50)
-    country_code: str | None = Field(default=None, max_length=3)  # ISO 3166-1 alpha-2 (e.g. "VN", "US")
+    country_code: str | None = Field(
+        default=None, max_length=3
+    )  # ISO 3166-1 alpha-2 (e.g. "VN", "US")
     locale: str | None = Field(default="en", max_length=10)  # e.g. "en", "vi", "en-US"
     timezone: str | None = Field(default=None, max_length=50)  # e.g. "Asia/Ho_Chi_Minh"
-    currency: str | None = Field(default=None, max_length=3)  # ISO 4217, e.g. "USD", "VND"
-    gender: str | None = Field(default=None, max_length=20)  # e.g. "male", "female", "other"
+    currency: str | None = Field(
+        default=None, max_length=3
+    )  # ISO 4217, e.g. "USD", "VND"
+    gender: str | None = Field(
+        default=None, max_length=20
+    )  # e.g. "male", "female", "other"
     birth_date: date | None = None
     bio: str | None = Field(default=None, max_length=500)
     job_title: str | None = Field(default=None, max_length=255)
@@ -40,7 +53,9 @@ class User(SQLModel, table=True):
     subscriptions: list["UserSubscription"] = Relationship(back_populates="user")
     payments: list["Payment"] = Relationship(back_populates="user")
     social_accounts: list["SocialAccount"] = Relationship(back_populates="user")
-    device_tokens: list["UserDeviceToken"] = Relationship(back_populates="user", cascade_delete=True)
+    device_tokens: list["UserDeviceToken"] = Relationship(
+        back_populates="user", cascade_delete=True
+    )
 
     class Config:
         arbitrary_types_allowed = True
@@ -129,8 +144,7 @@ class UserDeviceToken(SQLModel, table=True):
         table_args = (
             # Unique: một device chỉ có một token cho một provider
             sa_UniqueConstraint(
-                "user_id", "provider", "device_token", 
-                name="uq_user_provider_token"
+                "user_id", "provider", "device_token", name="uq_user_provider_token"
             ),
             Index("ix_active_tokens", "user_id", "is_active"),
             Index("ix_expired_tokens", "expires_at"),
@@ -263,170 +277,6 @@ class Payment(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     user: User = Relationship(back_populates="payments")
     user_subscription: UserSubscription = Relationship(back_populates="payments")
-
-
-# --- User Project Model ---
-class UserProject(SQLModel, table=True):
-    __tablename__ = "user_projects"
-    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    name: str = Field(max_length=255, nullable=False, index=True)
-    color_code: str = Field(max_length=7, regex=r"^#[0-9A-Fa-f]{6}$")
-    user_id: uuid.UUID = Field(
-        sa_column=Column(
-            "user_id",
-            ForeignKey("users.id", ondelete="CASCADE"),
-            nullable=False,
-            index=True,
-        )
-    )
-    is_active: bool = Field(default=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
-    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
-
-
-# --- User Website Model ---
-class UserWebsite(SQLModel, table=True):
-    __tablename__ = "user_websites"
-    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    label: str | None = Field(default=None, max_length=255)
-    description: str | None = None
-    url: str = Field(max_length=500, nullable=False)
-    logo_url: str | None = Field(default=None, max_length=500)
-    company_slogan: str | None = Field(default=None, max_length=500)
-    company_name: str | None = Field(default=None, max_length=255)
-    color_primary1: str | None = Field(default=None, max_length=7)
-    color_primary2: str | None = Field(default=None, max_length=7)
-    color_background: str | None = Field(default=None, max_length=7)
-    color_bubble1: str | None = Field(default=None, max_length=7)
-    color_bubble2: str | None = Field(default=None, max_length=7)
-    is_allow_image: bool = Field(default=True, nullable=False)
-    is_allow_file: bool = Field(default=True, nullable=False)
-    user_id: uuid.UUID = Field(
-        sa_column=Column(
-            "user_id",
-            ForeignKey("users.id", ondelete="CASCADE"),
-            nullable=False,
-            index=True,
-        )
-    )
-    user_project_id: uuid.UUID = Field(
-        sa_column=Column(
-            "user_project_id",
-            ForeignKey("user_projects.id", ondelete="CASCADE"),
-            nullable=False,
-            index=True,
-        )
-    )
-    is_active: bool = Field(default=True, index=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
-    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
-
-
-# --- User Product Model ---
-class UserProduct(SQLModel, table=True):
-    __tablename__ = "user_products"
-    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    name: str = Field(max_length=255, nullable=False, index=True)
-    thumbnail: str | None = Field(default=None, max_length=500)
-    description: str | None = None
-    is_active: bool = Field(default=True)
-    user_id: uuid.UUID = Field(
-        sa_column=Column(
-            "user_id",
-            ForeignKey("users.id", ondelete="CASCADE"),
-            nullable=False,
-            index=True,
-        )
-    )
-    user_project_id: uuid.UUID = Field(
-        sa_column=Column(
-            "user_project_id",
-            ForeignKey("user_projects.id", ondelete="CASCADE"),
-            nullable=False,
-            index=True,
-        )
-    )
-    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
-    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
-    assets: list["UserProductAsset"] = Relationship(back_populates="user_product")
-
-
-# --- User Product Asset Model ---
-class UserProductAsset(SQLModel, table=True):
-    __tablename__ = "user_product_assets"
-    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    user_product_id: uuid.UUID = Field(
-        sa_column=Column(
-            "user_product_id",
-            ForeignKey("user_products.id", ondelete="CASCADE"),
-            nullable=False,
-            index=True,
-        )
-    )
-    label: str | None = Field(default=None, max_length=255)
-    origin_url: str = Field(max_length=1000, nullable=False)
-    medium_url: str | None = Field(default=None, max_length=1000)
-    tiny_url: str | None = Field(default=None, max_length=1000)
-    file_type: str = Field(max_length=50, nullable=False)
-    file_size: int | None = None
-    mime_type: str | None = Field(default=None, max_length=100)
-    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
-    # Relationships
-    user_product: UserProduct = Relationship(back_populates="assets")
-
-
-# --- User FAQ Model ---
-class UserFAQ(SQLModel, table=True):
-    __tablename__ = "user_faqs"
-    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    question: str = Field(nullable=False)
-    answer: str = Field(nullable=False)
-    description: str | None = None
-    is_active: bool = Field(default=True, index=True)
-    user_id: uuid.UUID = Field(
-        sa_column=Column(
-            "user_id",
-            ForeignKey("users.id", ondelete="CASCADE"),
-            nullable=False,
-            index=True,
-        )
-    )
-    user_project_id: uuid.UUID = Field(
-        sa_column=Column(
-            "user_project_id",
-            ForeignKey("user_projects.id", ondelete="CASCADE"),
-            nullable=False,
-            index=True,
-        )
-    )
-    sort_order: int = Field(default=0, index=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
-    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
-    assets: list["UserFAQAsset"] = Relationship(back_populates="user_faq")
-
-
-# --- User FAQ Asset Model ---
-class UserFAQAsset(SQLModel, table=True):
-    __tablename__ = "user_faqs_assets"
-    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    user_faq_id: uuid.UUID = Field(
-        sa_column=Column(
-            "user_faq_id",
-            ForeignKey("user_faqs.id", ondelete="CASCADE"),
-            nullable=False,
-            index=True,
-        )
-    )
-    label: str | None = Field(default=None, max_length=255)
-    origin_url: str = Field(max_length=1000, nullable=False)
-    medium_url: str | None = Field(default=None, max_length=1000)
-    tiny_url: str | None = Field(default=None, max_length=1000)
-    file_type: str = Field(max_length=50, nullable=False)
-    file_size: int | None = None
-    mime_type: str | None = Field(default=None, max_length=100)
-    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
-    # Relationships
-    user_faq: UserFAQ = Relationship(back_populates="assets")
 
 
 # --- Blog Models ---

@@ -29,6 +29,7 @@ def upgrade():
         sa.Column("company_name", sa.String(length=255), nullable=True),
         sa.Column("website_url", sa.String(), nullable=True),
         sa.Column("avatar_url", sa.String(), nullable=True),
+        sa.Column("lemon_customer_id", sa.String(length=255), nullable=True),
         sa.Column("is_superuser", sa.Boolean(), nullable=False),
         sa.Column("ref_code", sa.String(length=32), nullable=True),
         sa.Column("request_delete_at", sa.DateTime(), nullable=True),
@@ -87,7 +88,9 @@ def upgrade():
         sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("user_id", "provider", "device_token", name="uq_user_provider_token"),
+        sa.UniqueConstraint(
+            "user_id", "provider", "device_token", name="uq_user_provider_token"
+        ),
     )
     op.create_index(
         op.f("ix_user_device_tokens_user_id"),
@@ -191,181 +194,71 @@ def upgrade():
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("user_id"),
     )
- 
 
-    # Create user_projects table
+    # Create subscription_plans table
     op.create_table(
-        "user_projects",
+        "subscription_plans",
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("code", sa.String(length=64), nullable=False),
         sa.Column("name", sa.String(length=255), nullable=False),
-        sa.Column("color_code", sa.String(length=7), nullable=False),
-        sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("is_active", sa.Boolean(), nullable=False),
-        sa.Column("created_at", sa.DateTime(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(), nullable=False),
-        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index(
-        op.f("ix_user_projects_name"), "user_projects", ["name"], unique=False
-    )
-    op.create_index(
-        op.f("ix_user_projects_user_id"), "user_projects", ["user_id"], unique=False
-    )
-
-    # Create user_websites table
-    op.create_table(
-        "user_websites",
-        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("label", sa.String(length=255), nullable=True),
         sa.Column("description", sa.String(), nullable=True),
-        sa.Column("url", sa.String(length=500), nullable=False),
-        sa.Column("logo_url", sa.String(length=500), nullable=True),
-        sa.Column("company_slogan", sa.String(length=500), nullable=True),
-        sa.Column("company_name", sa.String(length=255), nullable=True),
-        sa.Column("color_primary1", sa.String(length=7), nullable=True),
-        sa.Column("color_primary2", sa.String(length=7), nullable=True),
-        sa.Column("color_background", sa.String(length=7), nullable=True),
-        sa.Column("color_bubble1", sa.String(length=7), nullable=True),
-        sa.Column("color_bubble2", sa.String(length=7), nullable=True),
-        sa.Column("is_allow_image", sa.Boolean(), nullable=False),
-        sa.Column("is_allow_file", sa.Boolean(), nullable=False),
-        sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("user_project_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("price", sa.Integer(), nullable=False),
+        sa.Column("currency", sa.String(length=16), nullable=False),
+        sa.Column("interval", sa.String(length=16), nullable=False),
+        sa.Column("features", postgresql.JSON(astext_type=sa.Text()), nullable=True),
+        sa.Column("lemon_product_id", sa.String(length=255), nullable=True),
+        sa.Column("lemon_variant_id", sa.String(length=255), nullable=True),
         sa.Column("is_active", sa.Boolean(), nullable=False),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("updated_at", sa.DateTime(), nullable=False),
-        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(
-            ["user_project_id"], ["user_projects.id"], ondelete="CASCADE"
-        ),
         sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index(
-        op.f("ix_user_websites_is_active"), "user_websites", ["is_active"], unique=False
-    )
-    op.create_index(
-        op.f("ix_user_websites_user_id"), "user_websites", ["user_id"], unique=False
-    )
-    op.create_index(
-        op.f("ix_user_websites_user_project_id"),
-        "user_websites",
-        ["user_project_id"],
-        unique=False,
+        sa.UniqueConstraint("code"),
     )
 
-    # Create user_products table
+    # Create user_subscriptions table
     op.create_table(
-        "user_products",
+        "user_subscriptions",
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("name", sa.String(length=255), nullable=False),
-        sa.Column("thumbnail", sa.String(length=500), nullable=True),
-        sa.Column("description", sa.String(), nullable=True),
-        sa.Column("is_active", sa.Boolean(), nullable=False),
         sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("user_project_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column(
+            "subscription_plan_id", postgresql.UUID(as_uuid=True), nullable=False
+        ),
+        sa.Column("lemon_subscription_id", sa.String(length=255), nullable=True),
+        sa.Column("status", sa.String(length=32), nullable=False),
+        sa.Column("start_date", sa.DateTime(), nullable=True),
+        sa.Column("current_period_end", sa.DateTime(), nullable=True),
+        sa.Column("cancel_at_period_end", sa.Boolean(), nullable=False),
+        sa.Column("canceled_at", sa.DateTime(), nullable=True),
+        sa.Column("trial_end", sa.DateTime(), nullable=True),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("updated_at", sa.DateTime(), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["subscription_plan_id"], ["subscription_plans.id"], ondelete="RESTRICT"
+        ),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(
-            ["user_project_id"], ["user_projects.id"], ondelete="CASCADE"
-        ),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(
-        op.f("ix_user_products_name"), "user_products", ["name"], unique=False
-    )
-    op.create_index(
-        op.f("ix_user_products_user_id"), "user_products", ["user_id"], unique=False
-    )
-    op.create_index(
-        op.f("ix_user_products_user_project_id"),
-        "user_products",
-        ["user_project_id"],
-        unique=False,
-    )
 
-    # Create user_product_assets table
+    # Create payments table
     op.create_table(
-        "user_product_assets",
+        "payments",
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("user_product_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("label", sa.String(length=255), nullable=True),
-        sa.Column("origin_url", sa.String(length=1000), nullable=False),
-        sa.Column("medium_url", sa.String(length=1000), nullable=True),
-        sa.Column("tiny_url", sa.String(length=1000), nullable=True),
-        sa.Column("file_type", sa.String(length=50), nullable=False),
-        sa.Column("file_size", sa.Integer(), nullable=True),
-        sa.Column("mime_type", sa.String(length=100), nullable=True),
-        sa.Column("created_at", sa.DateTime(), nullable=False),
-        sa.ForeignKeyConstraint(
-            ["user_product_id"], ["user_products.id"], ondelete="CASCADE"
-        ),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index(
-        op.f("ix_user_product_assets_user_product_id"),
-        "user_product_assets",
-        ["user_product_id"],
-        unique=False,
-    )
-
-    # Create user_faqs table
-    op.create_table(
-        "user_faqs",
-        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("question", sa.String(), nullable=False),
-        sa.Column("answer", sa.String(), nullable=False),
-        sa.Column("description", sa.String(), nullable=True),
-        sa.Column("is_active", sa.Boolean(), nullable=False),
         sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("user_project_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("sort_order", sa.Integer(), nullable=False),
+        sa.Column(
+            "user_subscription_id", postgresql.UUID(as_uuid=True), nullable=False
+        ),
+        sa.Column("lemon_order_id", sa.String(length=255), nullable=True),
+        sa.Column("amount_in_cents", sa.Integer(), nullable=True),
+        sa.Column("currency", sa.String(length=16), nullable=False),
+        sa.Column("status", sa.String(length=32), nullable=False),
+        sa.Column("paid_at", sa.DateTime(), nullable=True),
+        sa.Column("receipt_url", sa.String(), nullable=True),
         sa.Column("created_at", sa.DateTime(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(
-            ["user_project_id"], ["user_projects.id"], ondelete="CASCADE"
+            ["user_subscription_id"], ["user_subscriptions.id"], ondelete="CASCADE"
         ),
         sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index(
-        op.f("ix_user_faqs_is_active"), "user_faqs", ["is_active"], unique=False
-    )
-    op.create_index(
-        op.f("ix_user_faqs_user_id"), "user_faqs", ["user_id"], unique=False
-    )
-    op.create_index(
-        op.f("ix_user_faqs_user_project_id"),
-        "user_faqs",
-        ["user_project_id"],
-        unique=False,
-    )
-    op.create_index(
-        op.f("ix_user_faqs_sort_order"), "user_faqs", ["sort_order"], unique=False
-    )
-
-    # Create user_faqs_assets table
-    op.create_table(
-        "user_faqs_assets",
-        sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("user_faq_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("label", sa.String(length=255), nullable=True),
-        sa.Column("origin_url", sa.String(length=1000), nullable=False),
-        sa.Column("medium_url", sa.String(length=1000), nullable=True),
-        sa.Column("tiny_url", sa.String(length=1000), nullable=True),
-        sa.Column("file_type", sa.String(length=50), nullable=False),
-        sa.Column("file_size", sa.Integer(), nullable=True),
-        sa.Column("mime_type", sa.String(length=100), nullable=True),
-        sa.Column("created_at", sa.DateTime(), nullable=False),
-        sa.ForeignKeyConstraint(["user_faq_id"], ["user_faqs.id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index(
-        op.f("ix_user_faqs_assets_user_faq_id"),
-        "user_faqs_assets",
-        ["user_faq_id"],
-        unique=False,
     )
 
     # Create blogs_categories table
@@ -790,36 +683,9 @@ def downgrade():
     op.drop_index(op.f("ix_blogs_categories_name"), table_name="blogs_categories")
     op.drop_table("blogs_categories")
 
-    op.drop_index(
-        op.f("ix_user_faqs_assets_user_faq_id"), table_name="user_faqs_assets"
-    )
-    op.drop_table("user_faqs_assets")
-
-    op.drop_index(op.f("ix_user_faqs_sort_order"), table_name="user_faqs")
-    op.drop_index(op.f("ix_user_faqs_user_project_id"), table_name="user_faqs")
-    op.drop_index(op.f("ix_user_faqs_user_id"), table_name="user_faqs")
-    op.drop_index(op.f("ix_user_faqs_is_active"), table_name="user_faqs")
-    op.drop_table("user_faqs")
-
-    op.drop_index(
-        op.f("ix_user_product_assets_user_product_id"), table_name="user_product_assets"
-    )
-    op.drop_table("user_product_assets")
-
-    op.drop_index(op.f("ix_user_products_user_project_id"), table_name="user_products")
-    op.drop_index(op.f("ix_user_products_user_id"), table_name="user_products")
-    op.drop_index(op.f("ix_user_products_name"), table_name="user_products")
-    op.drop_table("user_products")
-
-    op.drop_index(op.f("ix_user_websites_user_project_id"), table_name="user_websites")
-    op.drop_index(op.f("ix_user_websites_user_id"), table_name="user_websites")
-    op.drop_index(op.f("ix_user_websites_is_active"), table_name="user_websites")
-    op.drop_table("user_websites")
-
-    op.drop_index(op.f("ix_user_projects_user_id"), table_name="user_projects")
-    op.drop_index(op.f("ix_user_projects_name"), table_name="user_projects")
-    op.drop_table("user_projects")
- 
+    op.drop_table("payments")
+    op.drop_table("user_subscriptions")
+    op.drop_table("subscription_plans")
     op.drop_table("billing_infos")
 
     op.drop_index(
