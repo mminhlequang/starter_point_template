@@ -1,0 +1,724 @@
+import uuid
+
+from datetime import datetime, date
+from typing import Optional
+from pydantic import EmailStr
+from sqlmodel import Field, Relationship, SQLModel
+from sqlalchemy import Column, JSON, UniqueConstraint as sa_UniqueConstraint, ForeignKey, Index
+
+
+# Database model, database table inferred from class name
+class User(SQLModel, table=True):
+    __tablename__ = "users"
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    email: EmailStr = Field(unique=True, index=True, max_length=255)
+    full_name: str | None = Field(default=None, max_length=255)
+    phone_number: str | None = Field(default=None, max_length=255)
+    company_name: str | None = Field(default=None, max_length=255)
+    website_url: str | None = None
+    avatar_url: str | None = None
+    is_superuser: bool = False
+    ref_code: str | None = Field(default=None, max_length=32, unique=True, index=True)
+    request_delete_at: datetime | None = None
+    inactive_at: datetime | None = None
+    trial_expired_at: datetime | None = None
+    email_verified: bool | None = None
+    last_login_provider: str | None = Field(default=None, max_length=50)
+    country_code: str | None = Field(default=None, max_length=3)  # ISO 3166-1 alpha-2 (e.g. "VN", "US")
+    locale: str | None = Field(default="en", max_length=10)  # e.g. "en", "vi", "en-US"
+    timezone: str | None = Field(default=None, max_length=50)  # e.g. "Asia/Ho_Chi_Minh"
+    currency: str | None = Field(default=None, max_length=3)  # ISO 4217, e.g. "USD", "VND"
+    gender: str | None = Field(default=None, max_length=20)  # e.g. "male", "female", "other"
+    birth_date: date | None = None
+    bio: str | None = Field(default=None, max_length=500)
+    job_title: str | None = Field(default=None, max_length=255)
+    hashed_password: str
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    # Relationships
+    billing_info: "BillingInfo" = Relationship(back_populates="user")
+    subscriptions: list["UserSubscription"] = Relationship(back_populates="user")
+    payments: list["Payment"] = Relationship(back_populates="user")
+    social_accounts: list["SocialAccount"] = Relationship(back_populates="user")
+    device_tokens: list["UserDeviceToken"] = Relationship(back_populates="user", cascade_delete=True)
+
+    class Config:
+        arbitrary_types_allowed = True
+
+
+# Social Account Model for social login
+class SocialAccount(SQLModel, table=True):
+    __tablename__ = "social_accounts"
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID = Field(
+        sa_column=Column("user_id", ForeignKey("users.id", ondelete="CASCADE"))
+    )
+
+    # Provider info (tối thiểu)
+    provider: str = Field(max_length=50)  # facebook, google, apple
+    provider_user_id: str = Field(max_length=255)  # ID từ provider
+    provider_email: str | None = Field(default=None, max_length=255)
+
+    # Timestamps
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    linked_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+    # Relationships
+    user: User = Relationship(back_populates="social_accounts")
+
+    class Config:
+        table_args = (
+            # Unique constraint: 1 provider chỉ link với 1 user
+            sa_UniqueConstraint(
+                "provider", "provider_user_id", name="uq_provider_user"
+            ),
+        )
+
+
+# --- User Device Tokens Model ---
+# For push notifications (FCM, APNs, etc.)
+class UserDeviceToken(SQLModel, table=True):
+    __tablename__ = "user_device_tokens"
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID = Field(
+        sa_column=Column(
+            "user_id",
+            ForeignKey("users.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
+    )
+
+    # Provider Information
+    # Options: 'fcm', 'apns', 'firebase', 'onesignal', 'web_push'
+    provider: str = Field(max_length=50, nullable=False, index=True)
+    # Actual token from provider (can be very long)
+    device_token: str = Field(max_length=1000, nullable=False)
+
+    # Device Information
+    # Options: 'ios', 'android', 'web', 'macos', 'windows'
+    device_type: str = Field(max_length=50, nullable=False, index=True)
+    # User-friendly device name: "iPhone 14 Pro", "Samsung Galaxy S23"
+    device_name: str | None = Field(default=None, max_length=255)
+    # Hardware identifier (UDID, Android ID, etc.)
+    device_id: str | None = Field(default=None, max_length=255, index=True)
+
+    # Status & Activity
+    is_active: bool = Field(default=True, nullable=False, index=True)
+    # Token verified by provider (successful test push)
+    is_verified: bool = Field(default=False, nullable=False)
+    # When this token was last used to send a notification
+    last_used_at: datetime | None = None
+    # When token will expire (if provider specifies)
+    expires_at: datetime | None = Field(default=None, index=True)
+
+    # Metadata
+    # App version on device: "1.2.3"
+    app_version: str | None = Field(default=None, max_length=50)
+    # OS version: "iOS 17.1", "Android 14"
+    os_version: str | None = Field(default=None, max_length=50)
+
+    # Timestamps
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+    # Relationships
+    user: User = Relationship(back_populates="device_tokens")
+
+    class Config:
+        table_args = (
+            # Unique: một device chỉ có một token cho một provider
+            sa_UniqueConstraint(
+                "user_id", "provider", "device_token", 
+                name="uq_user_provider_token"
+            ),
+            Index("ix_active_tokens", "user_id", "is_active"),
+            Index("ix_expired_tokens", "expires_at"),
+        )
+        arbitrary_types_allowed = True
+
+
+# OTP Verification Model - Multi-purpose OTP system
+class OTPVerification(SQLModel, table=True):
+    __tablename__ = "otp_verifications"
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID | None = Field(
+        sa_column=Column("user_id", ForeignKey("users.id", ondelete="CASCADE")),
+        default=None,
+    )
+
+    # Purpose of OTP: password_reset, email_verification, phone_verification, 2fa, login, etc.
+    purpose: str = Field(max_length=50, nullable=False, index=True)
+
+    # Contact info (email or phone)
+    email: str | None = Field(default=None, max_length=255, index=True)
+    phone_number: str | None = Field(default=None, max_length=20, index=True)
+
+    # OTP details
+    otp_code: str = Field(max_length=6)  # 6-digit OTP
+
+    # Expiry and usage tracking
+    expires_at: datetime = Field(nullable=False)
+    is_used: bool = Field(default=False, index=True)
+    attempts: int = Field(default=0)  # Track verification attempts
+
+    # Timestamps
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    used_at: datetime | None = Field(default=None)
+
+    # Relationship (optional - OTP có thể dùng cho user chưa đăng ký)
+    user: User | None = Relationship()
+
+
+# Billing info for user (company, tax, address, ...)
+class BillingInfo(SQLModel, table=True):
+    __tablename__ = "billing_infos"
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID = Field(
+        sa_column=Column(
+            "user_id", ForeignKey("users.id", ondelete="CASCADE"), unique=True
+        )
+    )
+    company_name: str = Field(max_length=255)
+    tax_code: str | None = Field(default=None, max_length=255)
+    address: str
+    email: str = Field(max_length=255)
+    phone_number: str | None = Field(default=None, max_length=255)
+    country: str = Field(default="VN", max_length=32)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    user: User = Relationship(back_populates="billing_info")
+
+
+# Subscription plan (Start, Automate, Enterprise)
+class SubscriptionPlan(SQLModel, table=True):
+    __tablename__ = "subscription_plans"
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    code: str = Field(max_length=64, unique=True)
+    name: str = Field(max_length=255)
+    description: str | None = None
+    price: int
+    currency: str = Field(default="usd", max_length=16)
+    interval: str = Field(default="month", max_length=16)
+    features: dict | None = Field(default=None, sa_column=Column(JSON))
+    # New limits and permissions fields
+
+    # Lemon Squeezy integration
+    lemon_product_id: str | None = Field(default=None, max_length=255)
+    lemon_variant_id: str | None = Field(default=None, max_length=255)
+    is_active: bool = True
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    subscriptions: list["UserSubscription"] = Relationship(
+        back_populates="subscription_plan"
+    )
+
+
+# User's subscription
+class UserSubscription(SQLModel, table=True):
+    __tablename__ = "user_subscriptions"
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID = Field(
+        sa_column=Column("user_id", ForeignKey("users.id", ondelete="CASCADE"))
+    )
+    subscription_plan_id: uuid.UUID = Field(
+        sa_column=Column(
+            "subscription_plan_id",
+            ForeignKey("subscription_plans.id", ondelete="RESTRICT"),
+        )
+    )
+    lemon_subscription_id: str | None = Field(default=None, max_length=255)
+    status: str = Field(max_length=32)
+    start_date: datetime | None = None
+    current_period_end: datetime | None = None
+    cancel_at_period_end: bool = False
+    canceled_at: datetime | None = None
+    trial_end: datetime | None = None
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    user: User = Relationship(back_populates="subscriptions")
+    subscription_plan: SubscriptionPlan = Relationship(back_populates="subscriptions")
+    payments: list["Payment"] = Relationship(back_populates="user_subscription")
+
+
+# Payment for subscription
+class Payment(SQLModel, table=True):
+    __tablename__ = "payments"
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID = Field(
+        sa_column=Column("user_id", ForeignKey("users.id", ondelete="CASCADE"))
+    )
+    user_subscription_id: uuid.UUID = Field(
+        sa_column=Column(
+            "user_subscription_id",
+            ForeignKey("user_subscriptions.id", ondelete="CASCADE"),
+        )
+    )
+    lemon_order_id: str | None = Field(default=None, max_length=255)
+    amount_in_cents: int | None = None
+    currency: str = Field(default="usd", max_length=16)
+    status: str = Field(max_length=32)
+    paid_at: datetime | None = None
+    receipt_url: str | None = None
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    user: User = Relationship(back_populates="payments")
+    user_subscription: UserSubscription = Relationship(back_populates="payments")
+
+
+# --- User Project Model ---
+class UserProject(SQLModel, table=True):
+    __tablename__ = "user_projects"
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    name: str = Field(max_length=255, nullable=False, index=True)
+    color_code: str = Field(max_length=7, regex=r"^#[0-9A-Fa-f]{6}$")
+    user_id: uuid.UUID = Field(
+        sa_column=Column(
+            "user_id",
+            ForeignKey("users.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
+    )
+    is_active: bool = Field(default=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+# --- User Website Model ---
+class UserWebsite(SQLModel, table=True):
+    __tablename__ = "user_websites"
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    label: str | None = Field(default=None, max_length=255)
+    description: str | None = None
+    url: str = Field(max_length=500, nullable=False)
+    logo_url: str | None = Field(default=None, max_length=500)
+    company_slogan: str | None = Field(default=None, max_length=500)
+    company_name: str | None = Field(default=None, max_length=255)
+    color_primary1: str | None = Field(default=None, max_length=7)
+    color_primary2: str | None = Field(default=None, max_length=7)
+    color_background: str | None = Field(default=None, max_length=7)
+    color_bubble1: str | None = Field(default=None, max_length=7)
+    color_bubble2: str | None = Field(default=None, max_length=7)
+    is_allow_image: bool = Field(default=True, nullable=False)
+    is_allow_file: bool = Field(default=True, nullable=False)
+    user_id: uuid.UUID = Field(
+        sa_column=Column(
+            "user_id",
+            ForeignKey("users.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
+    )
+    user_project_id: uuid.UUID = Field(
+        sa_column=Column(
+            "user_project_id",
+            ForeignKey("user_projects.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
+    )
+    is_active: bool = Field(default=True, index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+# --- User Product Model ---
+class UserProduct(SQLModel, table=True):
+    __tablename__ = "user_products"
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    name: str = Field(max_length=255, nullable=False, index=True)
+    thumbnail: str | None = Field(default=None, max_length=500)
+    description: str | None = None
+    is_active: bool = Field(default=True)
+    user_id: uuid.UUID = Field(
+        sa_column=Column(
+            "user_id",
+            ForeignKey("users.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
+    )
+    user_project_id: uuid.UUID = Field(
+        sa_column=Column(
+            "user_project_id",
+            ForeignKey("user_projects.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
+    )
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    assets: list["UserProductAsset"] = Relationship(back_populates="user_product")
+
+
+# --- User Product Asset Model ---
+class UserProductAsset(SQLModel, table=True):
+    __tablename__ = "user_product_assets"
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_product_id: uuid.UUID = Field(
+        sa_column=Column(
+            "user_product_id",
+            ForeignKey("user_products.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
+    )
+    label: str | None = Field(default=None, max_length=255)
+    origin_url: str = Field(max_length=1000, nullable=False)
+    medium_url: str | None = Field(default=None, max_length=1000)
+    tiny_url: str | None = Field(default=None, max_length=1000)
+    file_type: str = Field(max_length=50, nullable=False)
+    file_size: int | None = None
+    mime_type: str | None = Field(default=None, max_length=100)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    # Relationships
+    user_product: UserProduct = Relationship(back_populates="assets")
+
+
+# --- User FAQ Model ---
+class UserFAQ(SQLModel, table=True):
+    __tablename__ = "user_faqs"
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    question: str = Field(nullable=False)
+    answer: str = Field(nullable=False)
+    description: str | None = None
+    is_active: bool = Field(default=True, index=True)
+    user_id: uuid.UUID = Field(
+        sa_column=Column(
+            "user_id",
+            ForeignKey("users.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
+    )
+    user_project_id: uuid.UUID = Field(
+        sa_column=Column(
+            "user_project_id",
+            ForeignKey("user_projects.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
+    )
+    sort_order: int = Field(default=0, index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    assets: list["UserFAQAsset"] = Relationship(back_populates="user_faq")
+
+
+# --- User FAQ Asset Model ---
+class UserFAQAsset(SQLModel, table=True):
+    __tablename__ = "user_faqs_assets"
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_faq_id: uuid.UUID = Field(
+        sa_column=Column(
+            "user_faq_id",
+            ForeignKey("user_faqs.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
+    )
+    label: str | None = Field(default=None, max_length=255)
+    origin_url: str = Field(max_length=1000, nullable=False)
+    medium_url: str | None = Field(default=None, max_length=1000)
+    tiny_url: str | None = Field(default=None, max_length=1000)
+    file_type: str = Field(max_length=50, nullable=False)
+    file_size: int | None = None
+    mime_type: str | None = Field(default=None, max_length=100)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    # Relationships
+    user_faq: UserFAQ = Relationship(back_populates="assets")
+
+
+# --- Blog Models ---
+class BlogPostCategory(SQLModel, table=True):
+    __tablename__ = "blogs_post_categories"
+    post_id: uuid.UUID = Field(
+        sa_column=Column(
+            "post_id",
+            ForeignKey("blogs_posts.id", ondelete="CASCADE"),
+            primary_key=True,
+        )
+    )
+    category_id: uuid.UUID = Field(
+        sa_column=Column(
+            "category_id",
+            ForeignKey("blogs_categories.id", ondelete="CASCADE"),
+            primary_key=True,
+        )
+    )
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+class BlogPostTag(SQLModel, table=True):
+    __tablename__ = "blogs_post_tags"
+    post_id: uuid.UUID = Field(
+        sa_column=Column(
+            "post_id",
+            ForeignKey("blogs_posts.id", ondelete="CASCADE"),
+            primary_key=True,
+        )
+    )
+    tag_id: uuid.UUID = Field(
+        sa_column=Column(
+            "tag_id",
+            ForeignKey("blogs_tags.id", ondelete="CASCADE"),
+            primary_key=True,
+        )
+    )
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+class BlogCategory(SQLModel, table=True):
+    __tablename__ = "blogs_categories"
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    name: str = Field(max_length=255, nullable=False, unique=True, index=True)
+    slug: str = Field(max_length=255, nullable=False, unique=True, index=True)
+    description: str | None = None
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    # Relationships
+    posts: list["BlogPost"] = Relationship(
+        back_populates="categories", link_model=BlogPostCategory
+    )
+
+
+class BlogTag(SQLModel, table=True):
+    __tablename__ = "blogs_tags"
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    name: str = Field(max_length=100, nullable=False, unique=True, index=True)
+    slug: str = Field(max_length=100, nullable=False, unique=True, index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    # Relationships
+    posts: list["BlogPost"] = Relationship(
+        back_populates="tags", link_model=BlogPostTag
+    )
+
+
+class BlogUserAuthorProfile(SQLModel, table=True):
+    __tablename__ = "blogs_user_author_profiles"
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID = Field(
+        sa_column=Column(
+            "user_id",
+            ForeignKey("users.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
+    )
+    display_name: str = Field(max_length=255, nullable=False)
+    bio: str | None = None
+    avatar_url: str | None = None
+    is_active: bool = Field(default=True, index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    # Relationships
+    user: User = Relationship()
+    posts: list["BlogPost"] = Relationship(back_populates="author_profile")
+
+
+class BlogPost(SQLModel, table=True):
+    __tablename__ = "blogs_posts"
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    author_profile_id: uuid.UUID | None = Field(
+        sa_column=Column(
+            "author_profile_id",
+            ForeignKey("blogs_user_author_profiles.id", ondelete="SET NULL"),
+            nullable=True,
+            index=True,
+        )
+    )
+    title: str = Field(max_length=255, nullable=False)
+    slug: str = Field(max_length=255, nullable=False, unique=True, index=True)
+    summary: str | None = None
+    content: str = Field(nullable=False)
+    thumbnail_url: str | None = None
+    thumbnail_compressed_url: str | None = None
+    is_featured: bool = Field(default=False, index=True)
+    is_hot: bool = Field(default=False, index=True)
+    status: str = Field(
+        default="draft", max_length=20, index=True
+    )  # draft, published, archived
+    published_at: datetime | None = None
+    view_count: int = Field(default=0, index=True)
+    seo_title: str | None = Field(default=None, max_length=255)
+    seo_description: str | None = None
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    # Relationships
+    author_profile: BlogUserAuthorProfile | None = Relationship(back_populates="posts")
+    categories: list[BlogCategory] = Relationship(
+        back_populates="posts", link_model=BlogPostCategory
+    )
+    tags: list[BlogTag] = Relationship(back_populates="posts", link_model=BlogPostTag)
+
+
+# --- FAQ Models ---
+class FAQCategory(SQLModel, table=True):
+    __tablename__ = "faq_categories"
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    name: str = Field(max_length=255, nullable=False, index=True)
+    description: str | None = None
+    order_index: int = Field(default=0, index=True)
+    is_active: bool = Field(default=True, index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    # Relationships
+    faqs: list["FAQ"] = Relationship(back_populates="category")
+
+
+class FAQ(SQLModel, table=True):
+    __tablename__ = "faqs"
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    question: str = Field(nullable=False)
+    answer: str = Field(nullable=False)
+    addition_info: str | None = None
+    faq_category_id: uuid.UUID | None = Field(
+        sa_column=Column(
+            "faq_category_id",
+            ForeignKey("faq_categories.id", ondelete="SET NULL"),
+            nullable=True,
+            index=True,
+        )
+    )
+    order_index: int = Field(default=0, index=True)
+    is_active: bool = Field(default=True, index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    # Relationships
+    category: FAQCategory | None = Relationship(back_populates="faqs")
+
+
+# --- Support Ticket Models ---
+class SupportTicketCategory(SQLModel, table=True):
+    __tablename__ = "support_ticket_categories"
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    name: str = Field(max_length=255, nullable=False, index=True)
+    description: str | None = None
+    is_active: bool = Field(default=True, index=True)
+    is_internal: bool = Field(
+        default=False, nullable=False, index=True
+    )  # For internal staff use only
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    # Relationships
+    tickets: list["SupportTicket"] = Relationship(back_populates="category")
+
+
+class SupportTicket(SQLModel, table=True):
+    __tablename__ = "support_tickets"
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    subject: str = Field(max_length=500, nullable=False)
+    description: str = Field(nullable=False)
+    status: str = Field(
+        max_length=50, nullable=False, default="open", index=True
+    )  # open, in_progress, resolved, closed
+    priority: str = Field(
+        max_length=20, nullable=False, default="medium", index=True
+    )  # low, medium, high, urgent
+    ticket_category_id: uuid.UUID | None = Field(
+        sa_column=Column(
+            "ticket_category_id",
+            ForeignKey("support_ticket_categories.id", ondelete="SET NULL"),
+            nullable=True,
+            index=True,
+        )
+    )
+    user_id: uuid.UUID | None = Field(
+        sa_column=Column(
+            "user_id",
+            ForeignKey("users.id", ondelete="SET NULL"),
+            nullable=True,
+            index=True,
+        )
+    )
+    assigned_to: uuid.UUID | None = Field(
+        sa_column=Column(
+            "assigned_to",
+            ForeignKey("users.id", ondelete="SET NULL"),
+            nullable=True,
+            index=True,
+        )
+    )
+    created_at: datetime = Field(
+        default_factory=datetime.utcnow, nullable=False, index=True
+    )
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    # Relationships
+    category: SupportTicketCategory | None = Relationship(back_populates="tickets")
+    user: User | None = Relationship(
+        sa_relationship_kwargs={"foreign_keys": "[SupportTicket.user_id]"}
+    )
+    assigned_user: User | None = Relationship(
+        sa_relationship_kwargs={"foreign_keys": "[SupportTicket.assigned_to]"}
+    )
+    comments: list["SupportTicketComment"] = Relationship(
+        back_populates="ticket", cascade_delete=True
+    )
+    attachments: list["SupportTicketAttachment"] = Relationship(
+        back_populates="ticket", cascade_delete=True
+    )
+
+
+class SupportTicketComment(SQLModel, table=True):
+    __tablename__ = "support_ticket_comments"
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    ticket_id: uuid.UUID = Field(
+        sa_column=Column(
+            "ticket_id",
+            ForeignKey("support_tickets.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
+    )
+    user_id: uuid.UUID | None = Field(
+        sa_column=Column(
+            "user_id",
+            ForeignKey("users.id", ondelete="SET NULL"),
+            nullable=True,
+            index=True,
+        )
+    )
+    message: str = Field(nullable=False)
+    is_internal: bool = Field(
+        default=False, nullable=False
+    )  # Internal notes for staff only
+    created_at: datetime = Field(
+        default_factory=datetime.utcnow, nullable=False, index=True
+    )
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    # Relationships
+    ticket: SupportTicket = Relationship(back_populates="comments")
+    user: User | None = Relationship()
+    attachments: list["SupportTicketAttachment"] = Relationship(
+        back_populates="comment", cascade_delete=True
+    )
+
+
+class SupportTicketAttachment(SQLModel, table=True):
+    __tablename__ = "support_ticket_attachments"
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    ticket_id: uuid.UUID = Field(
+        sa_column=Column(
+            "ticket_id",
+            ForeignKey("support_tickets.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
+    )
+    comment_id: uuid.UUID | None = Field(
+        sa_column=Column(
+            "comment_id",
+            ForeignKey("support_ticket_comments.id", ondelete="CASCADE"),
+            nullable=True,
+            index=True,
+        )
+    )
+    file_url: str = Field(max_length=1000, nullable=False)
+    file_name: str = Field(max_length=255, nullable=False)
+    file_size: int | None = None
+    file_type: str | None = Field(default=None, max_length=100)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    # Relationships
+    ticket: SupportTicket = Relationship(back_populates="attachments")
+    comment: SupportTicketComment | None = Relationship(back_populates="attachments")
