@@ -3,7 +3,7 @@ services:
   # ================== DATABASE ==================
   db:
     image: postgres:17
-    container_name: shopviaads-db
+    container_name: {{prefix image}}-db
     restart: unless-stopped
     ports:
       - "127.0.0.1:5435:5432"
@@ -25,7 +25,7 @@ services:
   # ================== DATABASE ADMIN UI ==================
   adminer:
     image: adminer
-    container_name: shopviaads-adminer
+    container_name: {{prefix image}}-adminer
     restart: unless-stopped
     ports:
       - "8085:8080"
@@ -41,7 +41,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: shopviaads-prestart
+    container_name: {{prefix image}}-prestart
     depends_on:
       db:
         condition: service_healthy
@@ -59,7 +59,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: shopviaads-backend
+    container_name: {{prefix image}}-backend
     restart: unless-stopped
     ports:
       - "0.0.0.0:8000:8000"
@@ -94,7 +94,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: shopviaads-frontend
+    container_name: {{prefix image}}-frontend
     restart: unless-stopped
     ports:
       - "0.0.0.0:3002:3000"

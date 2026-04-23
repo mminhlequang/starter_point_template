@@ -4,6 +4,7 @@ Template backend sử dụng FastAPI + Nextjs + Docker Compose.
 File `.env` đã có sẵn dạng template placeholder. Bạn cần thay các giá trị sau:
 
 - Project name: `{{project_name}}`
+- Prefix docker: `{{prefix image}}`
 - Backend url: `{{backend domain}}`
 - Frontend website: `{{frontend domain}}`
 - Export port fastapi: `{{port fastapi}}`
