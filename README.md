@@ -5,9 +5,10 @@ File `.env` đã có sẵn dạng template placeholder. Bạn cần thay các gi
 
 - Project name: `{{project_name}}`
 - Prefix docker: `{{prefix image}}`
-- Backend url: `{{backend domain}}`
-- Frontend website: `{{frontend domain}}`
+- Backend domain: `{{backend domain}}`
+- Frontend domain: `{{frontend domain}}`
 - Export port fastapi: `{{port fastapi}}`
+- Export port nextjs: `{{port nextjs}}`
 - Export port adminer: `{{port adminer}}`
 - Export port postgres: `{{port postgres}}`
  
